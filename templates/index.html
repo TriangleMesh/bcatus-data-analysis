@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Travel Survey Data Analysis</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <!-- Loading Indicator -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <p>Loading data...</p>
+    </div>
+
+    <div class="container">
+        <div class="header-with-nav">
+            <h1>Travel Survey Data Analysis Dashboard</h1>
+            <!-- <div class="header-right">
+                <div class="data-source-info" id="data-source-info">
+                    <span class="data-label">Data Source:</span>
+                    <span class="data-file" id="current-file">Loading...</span>
+                </div>
+                <a href="/parameters" class="param-link">Adjust Parameters</a>
+            </div> -->
+        </div>
+
+        <!-- Summary Statistics -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Valid Trips</h3>
+                <p class="stat-value" id="total-trips">-</p>
+            </div>
+            <div class="stat-card">
+                <h3>Unique Participants</h3>
+                <p class="stat-value" id="unique-people">-</p>
+            </div>
+            <div class="stat-card">
+                <h3>Full Week Coverage</h3>
+                <p class="stat-value" id="full-week-users">-</p>
+                <p class="stat-note" id="full-week-percentage">-</p>
+            </div>
+            <div class="stat-card">
+                <h3>Avg Trips/Person/Day</h3>
+                <p class="stat-value" id="avg-trips">-</p>
+                <p class="stat-note">Target: ~4</p>
+            </div>
+            <div class="stat-card">
+                <h3>Survey Period</h3>
+                <p class="stat-value-small" id="date-range">-</p>
+            </div>
+        </div>
+
+        <!-- Regional Summary Statistics -->
+        <div class="indicator-section">
+            <div class="indicator-header">
+                <h2>Regional Overview</h2>
+                <span class="indicator-badge">Statistics by Region</span>
+            </div>
+            <div id="regional-stats" class="stats-grid">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Indicator 1: Trips per Person per Day -->
+        <div class="indicator-section">
+            <div class="indicator-header">
+                <h2>Indicator 1: Trips per Person per Day</h2>
+                <span class="indicator-badge">Target: ~4 trips/day</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="tripsPerPersonChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-subtitle">By Region</h3>
+                <canvas id="tripsPerPersonRegionChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Indicator 2: Mode Share -->
+        <div class="indicator-section">
+            <div class="indicator-header">
+                <h2>Indicator 2: Mode Share</h2>
+                <span class="indicator-badge">Auto-driver should have highest share</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="modeShareChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-subtitle">Mode Share by Region (Top 5 Modes)</h3>
+                <canvas id="modeShareRegionChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Indicator 3: Trip Start Time -->
+        <div class="indicator-section">
+            <div class="indicator-header">
+                <h2>Indicator 3: Trip Start Time by Hour</h2>
+                <span class="indicator-badge">Weekday: Morning peak (6-9) & Afternoon peak (3-5)</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="startTimeWeekdayChart"></canvas>
+            </div>
+            <div class="chart-row">
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Saturday Trip Start Times</h3>
+                    <canvas id="startTimeSaturdayChart"></canvas>
+                </div>
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Sunday Trip Start Times</h3>
+                    <canvas id="startTimeSundayChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-subtitle">Weekday Start Times by Region</h3>
+                <canvas id="startTimeWeekdayRegionChart"></canvas>
+            </div>
+            <div class="chart-row">
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Saturday Start Times by Region</h3>
+                    <canvas id="startTimeSaturdayRegionChart"></canvas>
+                </div>
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Sunday Start Times by Region</h3>
+                    <canvas id="startTimeSundayRegionChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Indicator 4: Trip Purpose and Mode Coverage -->
+        <div class="indicator-section">
+            <div class="indicator-header">
+                <h2>Indicator 4: Trip Purpose & Mode Coverage</h2>
+                <span class="indicator-badge">All trips should have purposes and modes</span>
+            </div>
+            <div class="coverage-grid">
+                <div class="coverage-card">
+                    <h3>Mode Coverage</h3>
+                    <p class="coverage-value" id="mode-coverage">-</p>
+                </div>
+                <div class="coverage-card">
+                    <h3>Purpose Coverage</h3>
+                    <p class="coverage-value" id="purpose-coverage">-</p>
+                </div>
+                <!-- <div class="coverage-card">
+                    <h3>Both Coverage</h3>
+                    <p class="coverage-value" id="both-coverage">-</p>
+                </div> -->
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-subtitle">Coverage by Region</h3>
+                <canvas id="coverageRegionChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Indicator 5: Trip Duration -->
+        <div class="indicator-section">
+            <div class="indicator-header">
+                <h2>Indicator 5: Trip Duration Distribution</h2>
+                <span class="indicator-badge">10-30 mins should have highest share</span>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-subtitle">Weekday Trip Duration</h3>
+                <canvas id="tripDurationWeekdayChart"></canvas>
+            </div>
+            <div class="chart-row">
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Saturday Trip Duration</h3>
+                    <canvas id="tripDurationSaturdayChart"></canvas>
+                </div>
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Sunday Trip Duration</h3>
+                    <canvas id="tripDurationSundayChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-subtitle">Weekday Trip Duration by Region</h3>
+                <canvas id="tripDurationWeekdayRegionChart"></canvas>
+            </div>
+            <div class="chart-row">
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Vancouver Trip Duration (Overall)</h3>
+                    <canvas id="tripDurationRegionVancouverChart"></canvas>
+                </div>
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Okanagan Trip Duration (Overall)</h3>
+                    <canvas id="tripDurationRegionOkanaganChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Indicator 6: Activity Duration -->
+        <div class="indicator-section">
+            <div class="indicator-header">
+                <h2>Indicator 6: Activity Duration by Purpose</h2>
+                <span class="indicator-badge">Work/School: 4-8 hrs | Shopping/Recreation: 0-2 hrs</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="activityDurationChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-subtitle">Activity Duration by Region (Avg Hours)</h3>
+                <canvas id="activityDurationRegionChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Indicator 7: Weekday Coverage Distribution -->
+        <div class="indicator-section">
+            <div class="indicator-header">
+                <h2>Indicator 7: Weekday Coverage Distribution</h2>
+                <span class="indicator-badge">Users reporting data for each day of the week</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="weekdayCoverageChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Indicator 8: User Completion Rate by Days -->
+        <div class="indicator-section">
+            <div class="indicator-header">
+                <h2>Indicator 8: User Completion Rate by Days</h2>
+                <span class="indicator-badge">Percentage of users completing X days or more</span>
+            </div>
+            <div class="chart-row">
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Cumulative Completion (X days or more)</h3>
+                    <canvas id="cumulativeCompletionChart"></canvas>
+                </div>
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Exact Day Completion</h3>
+                    <canvas id="exactCompletionChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Cumulative Completion by Region</h3>
+                    <canvas id="cumulativeCompletionRegionChart"></canvas>
+                </div>
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Exact Completion by Region</h3>
+                    <canvas id="exactCompletionRegionChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Indicator 9: Trip Purpose Distribution by Hour -->
+        <div class="indicator-section">
+            <div class="indicator-header">
+                <h2>Indicator 9: Trip Purpose Distribution by Hour</h2>
+                <span class="indicator-badge">How trip purposes change throughout the day</span>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-subtitle">Weekday Purpose Distribution</h3>
+                <canvas id="purposeByHourWeekdayChart"></canvas>
+            </div>
+            <div class="chart-row">
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Saturday Purpose Distribution</h3>
+                    <canvas id="purposeByHourSaturdayChart"></canvas>
+                </div>
+                <div class="chart-container-half">
+                    <h3 class="chart-subtitle">Sunday Purpose Distribution</h3>
+                    <canvas id="purposeByHourSundayChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+
+</html>
