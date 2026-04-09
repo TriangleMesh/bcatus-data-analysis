@@ -15,6 +15,14 @@ from math import radians, cos, sin, asin, sqrt
 
 # List of parameter combinations to test
 PARAMETER_SETS = [
+    {
+        'name': 'Wave3 Baseline: 200m/10min merge, 100m/5min delete',
+        'distance_threshold': 200,
+        'time_gap_threshold': 10,
+        'delete_distance': 100,
+        'delete_time': 5,
+    },
+
     # === Time < 20 minutes (Very Conservative) ===
     {
         'name': 'Very Strict: 400m/10min merge, 100m/5min delete',
@@ -90,7 +98,20 @@ PARAMETER_SETS = [
     },
 ]
 
-INPUT_FILE = 'raw/app_data_20250210_all_with_routes.xlsx'
+DATASETS = [
+    {
+        'name': 'wave2',
+        'input_file': 'raw/app_data_20250210_all_with_routes.xlsx',
+        'output_file': 'output/parameter_comparison_results_wave2.csv',
+        'delete_empty_mode_or_purpose': False,
+    },
+    {
+        'name': 'wave3',
+        'input_file': 'wave3_raw/app_data_wave3_20251202.xlsx',
+        'output_file': 'output/parameter_comparison_results_wave3.csv',
+        'delete_empty_mode_or_purpose': True,
+    },
+]
 
 # ============================================================================
 # UTILITY FUNCTIONS (from merge and delete scripts)
@@ -160,6 +181,20 @@ def parse_routes(routes_data):
                 return None
     
     return None
+
+def clean_text(text):
+    """Normalize text values before empty checks."""
+    if pd.isna(text):
+        return text
+    text = str(text).replace('\u200b', '').replace('\u200c', '').replace('\u200d', '').replace('\ufeff', '')
+    return text.strip()
+
+def is_empty_mode_or_purpose(value):
+    """Match empty values used by app.py and cleaning scripts."""
+    if value is None or pd.isna(value):
+        return True
+    cleaned = clean_text(value)
+    return cleaned == '' or str(cleaned).lower() == 'empty'
 
 def mark_merge_candidates(df, distance_threshold, time_gap_threshold):
     """Mark potential merge candidates."""
@@ -235,46 +270,46 @@ def merge_trips(df, distance_threshold, time_gap_threshold):
         if 'merged_source_rows' not in current_row:
             current_row['merged_source_rows'] = ''
         result_rows.append((current_row, False, None))
-        
+
         merged_indices = [i]
         last_idx = i
-        
+
         for j in range(i + 1, len(df_copy)):
             if j in processed:
                 break
-            
+
             current = df_copy.iloc[i]
             next_row = df_copy.iloc[j]
             prev_row = df_copy.iloc[last_idx]
-            
+
             if (current['accessCode'] != next_row['accessCode'] or
                 current['start_date'] != next_row['start_date'] or
                 current['end_date'] != next_row['end_date']):
                 break
-            
+
             if pd.isna(prev_row['end_time']) or pd.isna(next_row['start_time']):
                 break
-            
+
             time_diff = (next_row['start_time'] - prev_row['end_time']).total_seconds() / 60
             if time_diff < 0 or time_diff > time_gap_threshold:
                 break
-            
+
             try:
                 prev_end_lat = float(prev_row['end_latitude'])
                 prev_end_lon = float(prev_row['end_longitude'])
                 next_start_lat = float(next_row['start_latitude'])
                 next_start_lon = float(next_row['start_longitude'])
-                
+
                 distance = haversine_distance(prev_end_lat, prev_end_lon,
                                              next_start_lat, next_start_lon)
                 if distance > distance_threshold:
                     break
             except:
                 break
-            
+
             merged_indices.append(j)
             last_idx = j
-        
+
         if len(merged_indices) > 1:
             for idx in merged_indices[1:]:
                 original_row = df.iloc[idx].copy()
@@ -284,50 +319,50 @@ def merge_trips(df, distance_threshold, time_gap_threshold):
                     original_row['merged_source_rows'] = ''
                 result_rows.append((original_row, False, None))
                 processed.add(idx)
-            
+
             merged_row = df.iloc[merged_indices[0]].copy()
             merged_row['end_time'] = df.iloc[merged_indices[-1]]['end_time']
             merged_row['end_latitude'] = df.iloc[merged_indices[-1]]['end_latitude']
             merged_row['end_longitude'] = df.iloc[merged_indices[-1]]['end_longitude']
-            
+
             total_seconds = 0
             for idx in merged_indices:
                 row = df.iloc[idx]
                 if 'time_duration' in row:
                     duration_str = row['time_duration']
                     total_seconds += time_string_to_seconds(duration_str)
-            
+
             merged_row['time_duration'] = seconds_to_time_string(total_seconds)
             merged_row['is_merged'] = True
             source_rows_str = ', '.join([str(idx + 2) for idx in merged_indices])
             merged_row['merged_source_rows'] = f"Merged from rows: {source_rows_str}"
             merged_row['merge_candidate'] = 2
-            
+
             result_rows.append((merged_row, True, None))
-        
+
         processed.add(i)
-    
+
     new_rows = [row_data for row_data, is_merged, info in result_rows]
     new_df = pd.DataFrame(new_rows)
     return new_df
 
-def mark_deleted_trips(df, delete_distance, delete_time):
+def mark_deleted_trips(df, delete_distance, delete_time, delete_empty_mode_or_purpose=False):
     """Mark trips for deletion."""
     df_copy = df.copy()
     df_copy['deleted'] = 0
-    
+
     for i in range(len(df_copy)):
         row = df_copy.iloc[i]
         should_delete = False
-        
+
         try:
             start_lat = float(row['start_latitude'])
             start_lon = float(row['start_longitude'])
             end_lat = float(row['end_latitude'])
             end_lon = float(row['end_longitude'])
-            
+
             distance = haversine_distance(start_lat, start_lon, end_lat, end_lon)
-            
+
             if 'time_duration' in row:
                 time_str = str(row['time_duration']).strip()
                 try:
@@ -343,29 +378,33 @@ def mark_deleted_trips(df, delete_distance, delete_time):
                     duration_minutes = 0
             else:
                 duration_minutes = 0
-            
+
             if distance <= delete_distance and duration_minutes <= delete_time:
                 should_delete = True
         except:
             pass
-        
+
+        if delete_empty_mode_or_purpose:
+            mode_empty = ('mode_of_travel' in df_copy.columns and is_empty_mode_or_purpose(row.get('mode_of_travel')))
+            purpose_empty = ('purpose_of_travel' in df_copy.columns and is_empty_mode_or_purpose(row.get('purpose_of_travel')))
+            if mode_empty or purpose_empty:
+                should_delete = True
+
         if should_delete:
             df_copy.loc[i, 'deleted'] = 1
-    
+
     return df_copy
 
 def calculate_trips_per_person(df):
     """Calculate trips per person per day statistics (from app.py logic)."""
-    # Filter data: keep merge_candidate 0 or 2, and deleted = 0
     if 'merge_candidate' in df.columns and 'deleted' in df.columns:
         filtered_df = df[(df['merge_candidate'].isin([0, 2])) & (df['deleted'] == 0)].copy()
     else:
         filtered_df = df.copy()
-    
-    # Filter out 'Other' region data (same as app.py)
+
     if 'region_area' in filtered_df.columns:
         filtered_df = filtered_df[filtered_df['region_area'] != 'Other'].copy()
-    
+
     if len(filtered_df) == 0:
         return {
             'total_trips': 0,
@@ -373,17 +412,14 @@ def calculate_trips_per_person(df):
             'overall_avg': 0,
             'weekday_avg': 0,
         }
-    
-    # Calculate trips per person per day
+
     trips_per_person_per_day = filtered_df.groupby(['accessCode', 'start_date']).size().reset_index(name='trip_count')
-    
-    # Add weekday info
     weekday_info = filtered_df[['start_date', 'start_weekday']].drop_duplicates()
     trips_per_person_per_day = trips_per_person_per_day.merge(weekday_info, on='start_date', how='left')
-    
+
     overall_avg = round(trips_per_person_per_day['trip_count'].mean(), 2)
     weekday_avg = round(trips_per_person_per_day[~trips_per_person_per_day['start_weekday'].isin(['Saturday', 'Sunday'])]['trip_count'].mean(), 2)
-    
+
     return {
         'total_trips': len(filtered_df),
         'unique_people': filtered_df['accessCode'].nunique(),
@@ -391,119 +427,119 @@ def calculate_trips_per_person(df):
         'weekday_avg': weekday_avg,
     }
 
-# ============================================================================
-# MAIN TEST FUNCTION
-# ============================================================================
-
-def test_parameters():
-    """Test different parameter combinations."""
-    
-    print("\n" + "="*80)
-    print("WAVE 2 PARAMETER TESTING")
-    print("="*80)
-    print(f"Input file: {INPUT_FILE}")
+def test_parameters_for_dataset(dataset_name, input_file, output_file, delete_empty_mode_or_purpose=False):
+    """Test different parameter combinations for one dataset."""
+    print("\n" + "=" * 80)
+    print(f"{dataset_name.upper()} PARAMETER TESTING")
+    print("=" * 80)
+    print(f"Input file: {input_file}")
     print(f"Testing {len(PARAMETER_SETS)} parameter combinations\n")
-    
-    # Load original data
+
     print("Loading input data...")
-    df_original = pd.read_excel(INPUT_FILE)
+    df_original = pd.read_excel(input_file)
     print(f"Original data: {len(df_original)} rows\n")
-    
-    # Test each parameter set
+
     results = []
-    
+
     for param_set in PARAMETER_SETS:
-        print(f"\n{'─'*80}")
+        print(f"\n{'─' * 80}")
         print(f"Testing: {param_set['name']}")
         print(f"  Merge params: distance={param_set['distance_threshold']}m, time_gap={param_set['time_gap_threshold']}min")
         print(f"  Delete params: distance={param_set['delete_distance']}m, time={param_set['delete_time']}min")
-        print(f"{'─'*80}")
-        
+        print(f"{'─' * 80}")
+
         df = df_original.copy()
-        
-        # Step 1: Mark merge candidates
+
         print("  Step 1: Marking merge candidates...")
         df = mark_merge_candidates(df, param_set['distance_threshold'], param_set['time_gap_threshold'])
         merge_count = (df['merge_candidate'] == 1).sum()
         print(f"    Found {merge_count} small trips that could be merged")
-        
-        # Step 2: Perform merging
+
         print("  Step 2: Merging trips...")
         df = merge_trips(df, param_set['distance_threshold'], param_set['time_gap_threshold'])
         print(f"    After merge: {len(df)} rows")
-        
-        # Step 3: Mark deleted trips
+
         print("  Step 3: Marking trips for deletion...")
-        df = mark_deleted_trips(df, param_set['delete_distance'], param_set['delete_time'])
+        df = mark_deleted_trips(
+            df,
+            param_set['delete_distance'],
+            param_set['delete_time'],
+            delete_empty_mode_or_purpose=delete_empty_mode_or_purpose,
+        )
         delete_count = (df['deleted'] == 1).sum()
         print(f"    Found {delete_count} trips marked for deletion")
-        
-        # Step 4: Calculate statistics
+
         print("  Step 4: Calculating statistics...")
         stats = calculate_trips_per_person(df)
-        
-        # Store results
+
         result = {
+            'dataset': dataset_name,
             'name': param_set['name'],
             'distance_threshold': param_set['distance_threshold'],
             'time_gap_threshold': param_set['time_gap_threshold'],
             'delete_distance': param_set['delete_distance'],
             'delete_time': param_set['delete_time'],
+            'delete_empty_mode_or_purpose': delete_empty_mode_or_purpose,
             'rows_after_merge': len(df),
             'total_trips': stats['total_trips'],
             'unique_people': stats['unique_people'],
             'overall_avg': stats['overall_avg'],
             'weekday_avg': stats['weekday_avg'],
         }
-        
+
         results.append(result)
-        
-        print(f"  Results:")
+
+        print("  Results:")
         print(f"    Total valid trips: {stats['total_trips']}")
         print(f"    Unique participants: {stats['unique_people']}")
         print(f"    Trip per person per day (overall): {stats['overall_avg']}")
         print(f"    Trip per person per day (weekday): {stats['weekday_avg']}")
-    
-    # Print comparison table
-    print("\n" + "="*80)
-    print("SUMMARY: COMPARISON OF ALL PARAMETER SETS")
-    print("="*80 + "\n")
-    
-    # Create comparison dataframe
+
+    print("\n" + "=" * 80)
+    print(f"SUMMARY: COMPARISON OF ALL PARAMETER SETS FOR {dataset_name.upper()}")
+    print("=" * 80 + "\n")
+
     comparison_df = pd.DataFrame(results)
-    
-    # Display in a nice format
+
     pd.set_option('display.max_columns', None)
     pd.set_option('display.width', None)
     pd.set_option('display.max_colwidth', 30)
-    
+
     print(comparison_df.to_string(index=False))
-    
-    # Show key insights
-    print("\n" + "="*80)
+
+    print("\n" + "=" * 80)
     print("KEY INSIGHTS")
-    print("="*80)
-    
+    print("=" * 80)
+
     min_trips_idx = comparison_df['overall_avg'].idxmin()
     max_trips_idx = comparison_df['overall_avg'].idxmax()
-    
+
     print(f"\nLowest trip per person per day: {comparison_df.loc[min_trips_idx, 'name']}")
     print(f"  → {comparison_df.loc[min_trips_idx, 'overall_avg']} trips/person/day")
     print(f"  → {comparison_df.loc[min_trips_idx, 'total_trips']} total valid trips")
-    
+
     print(f"\nHighest trip per person per day: {comparison_df.loc[max_trips_idx, 'name']}")
     print(f"  → {comparison_df.loc[max_trips_idx, 'overall_avg']} trips/person/day")
     print(f"  → {comparison_df.loc[max_trips_idx, 'total_trips']} total valid trips")
-    
+
     reduction = comparison_df.loc[max_trips_idx, 'overall_avg'] - comparison_df.loc[min_trips_idx, 'overall_avg']
     print(f"\nMaximum reduction potential: {reduction} trips/person/day")
     print(f"  ({reduction / comparison_df.loc[max_trips_idx, 'overall_avg'] * 100:.1f}% reduction)")
-    
-    # Save results to CSV
-    output_file = 'output/parameter_comparison_results.csv'
+
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     comparison_df.to_csv(output_file, index=False)
     print(f"\n✓ Results saved to: {output_file}")
+
+def test_parameters():
+    """Test different parameter combinations for wave2 and wave3 datasets."""
+    for dataset in DATASETS:
+        test_parameters_for_dataset(
+            dataset_name=dataset['name'],
+            input_file=dataset['input_file'],
+            output_file=dataset['output_file'],
+            delete_empty_mode_or_purpose=dataset.get('delete_empty_mode_or_purpose', False),
+        )
+
 
 if __name__ == '__main__':
     test_parameters()
